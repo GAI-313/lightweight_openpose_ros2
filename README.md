@@ -16,3 +16,18 @@
     ```bash
     colcon build --symlink-install --packages-up-to lightweight_openpose_ros2
     ```
+
+# Execute
+```bash
+ros2 run lightweight_openpose_ros2 lightweight_openpose_ros2
+```
+
+- **Parameters**
+    |params name|type|default|description|
+    |:---|:---:|:---:|:---|
+    |**checkpoint_path**|`string`|`.../checkpoint_iter_370000.pth`|Path to the model checkpoint file.|
+    |**device**|`string`|`"cpu"`|Computation device (`"cpu"` or `"cuda"`).|
+    |**height_size**|`int`|`256`|Input image height for the network.|
+    |**qos.reliability**|`string`|`"RELIABLE"`|QoS reliability policy (`"RELIABLE"` or `"BEST_EFFORT"`).|
+    |**qos.durability**|`string`|`"VOLATILE"`|QoS durability policy (`"VOLATILE"` or `"TRANSIENT_LOCAL"`).|
+    |**qos.depth**|`int`|`10`|QoS history depth.|
