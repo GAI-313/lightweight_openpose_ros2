@@ -5,6 +5,7 @@ import rclpy
 
 import message_filters
 
+from std_srvs.srv import SetBool
 from sensor_msgs.msg import Image, CameraInfo
 
 from cv_bridge import CvBridge, CvBridgeError
@@ -32,12 +33,14 @@ class LightweightOpenPoseRos2(Node):
         self.declare_parameter('checkpoint_path', os.path.join(get_package_share_directory('lightweight_openpose_ros2'), 'datas', 'checkpoint_iter_370000.pth'))
         self.declare_parameter('device', 'cpu')
         self.declare_parameter('height_size', 256)
+        self.declare_parameter('debug', True)
         self.declare_parameter('qos.reliability', 'RELIABLE')
         self.declare_parameter('qos.durability', 'VOLATILE')
         self.declare_parameter('qos.depth', 10)
 
         param_checkpoint_path = self.get_parameter('checkpoint_path').value
         self.param_device = self.get_parameter('device').value
+        self.debug = self.get_parameter('debug').value
 
         self.get_logger().info('''
         LIGHTWEIGHT OPEN POSE ROS2 START.
@@ -57,6 +60,8 @@ class LightweightOpenPoseRos2(Node):
         self.previous_poses = []
         self.track = 1
         self.smooth = 1
+        # when rise, execute openpose
+        self.exec_flag = False
 
         # subscriber
         qos_reliability_str = self.get_parameter('qos.reliability').value.upper()
@@ -78,12 +83,16 @@ class LightweightOpenPoseRos2(Node):
             durability=durability_policy,
             depth=qos_depth
         )
-        self.image_sub = self.create_subscription(Image, '/ngsr/head_camera/rgb/image_raw', self.image_cb, qos_profile)
+        self.image_sub = self.create_subscription(Image, '/image_raw', self.image_cb, qos_profile)
+
+        # service
+        self.execute_cli = self.create_service(SetBool, 'execute', self.execute_cb)
 
         self.bridge = CvBridge()
         
         self.get_logger().info('''
         LIGHTWEIGHT OPEN POSE ROS2 SETUP IS DONE !
+        When call service, OpenPose will run.
         ''')
     
 
@@ -115,53 +124,66 @@ class LightweightOpenPoseRos2(Node):
     
 
     def image_cb(self, msg:Image):
-        try:
-            cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-            orig_cv_image = cv_image.copy()
-            heatmaps, pafs, scale, pad = self.infer_fast(
-                self.net, cv_image,
-                self.get_parameter('height_size').value,
-                self.stride, self.upsample_ratio, self.param_device)
+        if self.exec_flag:
+            try:
+                cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+                orig_cv_image = cv_image.copy()
+                heatmaps, pafs, scale, pad = self.infer_fast(
+                    self.net, cv_image,
+                    self.get_parameter('height_size').value,
+                    self.stride, self.upsample_ratio, self.param_device)
 
-            total_keypoints_num = 0
-            all_keypoints_by_type = []
-            for kpt_idx in range(self.num_keypoints):  # 19th for bg
-                total_keypoints_num += extract_keypoints(heatmaps[:, :, kpt_idx], all_keypoints_by_type, total_keypoints_num)
+                total_keypoints_num = 0
+                all_keypoints_by_type = []
+                for kpt_idx in range(self.num_keypoints):  # 19th for bg
+                    total_keypoints_num += extract_keypoints(heatmaps[:, :, kpt_idx], all_keypoints_by_type, total_keypoints_num)
 
-            pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
-            for kpt_id in range(all_keypoints.shape[0]):
-                all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * self.stride / self.upsample_ratio - pad[1]) / scale
-                all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * self.stride / self.upsample_ratio - pad[0]) / scale
-            current_poses = []
-            for n in range(len(pose_entries)):
-                if len(pose_entries[n]) == 0:
-                    continue
-                pose_keypoints = np.ones((self.num_keypoints, 2), dtype=np.int32) * -1
-                for kpt_id in range(self.num_keypoints):
-                    if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
-                        pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
-                        pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
-                pose = Pose(pose_keypoints, pose_entries[n][18])
-                current_poses.append(pose)
+                pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
+                for kpt_id in range(all_keypoints.shape[0]):
+                    all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * self.stride / self.upsample_ratio - pad[1]) / scale
+                    all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * self.stride / self.upsample_ratio - pad[0]) / scale
+                current_poses = []
+                for n in range(len(pose_entries)):
+                    if len(pose_entries[n]) == 0:
+                        continue
+                    pose_keypoints = np.ones((self.num_keypoints, 2), dtype=np.int32) * -1
+                    for kpt_id in range(self.num_keypoints):
+                        if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
+                            pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
+                            pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
+                    pose = Pose(pose_keypoints, pose_entries[n][18])
+                    current_poses.append(pose)
 
-            if self.track:
-                track_poses(self.previous_poses, current_poses, smooth=self.smooth)
-                self.previous_poses = current_poses
-            for pose in current_poses:
-                pose.draw(cv_image)
-            cv_image = cv2.addWeighted(orig_cv_image, 0.6, cv_image, 0.4, 0)
-            for pose in current_poses:
-                cv2.rectangle(cv_image, (pose.bbox[0], pose.bbox[1]),
-                            (pose.bbox[0] + pose.bbox[2], pose.bbox[1] + pose.bbox[3]), (0, 255, 0))
                 if self.track:
-                    cv2.putText(cv_image, 'id: {}'.format(pose.id), (pose.bbox[0], pose.bbox[1] - 16),
-                                cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 255))
-            cv2.imshow('Lightweight Human Pose Estimation ROS2', cv_image)
-            cv2.waitKey(1)
+                    track_poses(self.previous_poses, current_poses, smooth=self.smooth)
+                    self.previous_poses = current_poses
+                for pose in current_poses:
+                    pose.draw(cv_image)
+                cv_image = cv2.addWeighted(orig_cv_image, 0.6, cv_image, 0.4, 0)
+                for pose in current_poses:
+                    cv2.rectangle(cv_image, (pose.bbox[0], pose.bbox[1]),
+                                (pose.bbox[0] + pose.bbox[2], pose.bbox[1] + pose.bbox[3]), (0, 255, 0))
+                    if self.track:
+                        cv2.putText(cv_image, 'id: {}'.format(pose.id), (pose.bbox[0], pose.bbox[1] - 16),
+                                    cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 255))
+                if self.debug:
+                    cv2.imshow('Lightweight Human Pose Estimation ROS2', cv_image)
+                    cv2.waitKey(1)
 
-        except Exception as e:
-            self.get_logger().error(f'Error processing image: {str(e)}')
-            traceback.print_exc()
+            except Exception as e:
+                self.get_logger().error(f'Error processing image: {str(e)}')
+                traceback.print_exc()
+    
+
+    def execute_cb(self, req:SetBool.Request, res:SetBool.Response):
+        self.exec_flag = req.data
+        if self.exec_flag:
+            self.get_logger().info('START DETECT')
+        else:
+            self.get_logger().info('STOP DETECT')
+            if self.debug: cv2.destroyWindow("Lightweight Human Pose Estimation ROS2")
+        res.success = True
+        return res
 
 
 def main():
