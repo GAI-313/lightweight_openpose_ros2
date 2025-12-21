@@ -1,0 +1,3 @@
+**/__pycache__/**
+lightweight_openpose_ros2/datas/*
+!lightweight_openpose_ros2/datas/.gitkeep
