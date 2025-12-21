@@ -30,14 +30,14 @@ class LightweightOpenPoseRos2(Node):
 
         # parameters
         self.declare_parameter('checkpoint_path', os.path.join(get_package_share_directory('lightweight_openpose_ros2'), 'datas', 'checkpoint_iter_370000.pth'))
-        self.declare_parameter('param_device', 'cpu')
+        self.declare_parameter('device', 'cpu')
         self.declare_parameter('height_size', 256)
         self.declare_parameter('qos.reliability', 'RELIABLE')
         self.declare_parameter('qos.durability', 'VOLATILE')
         self.declare_parameter('qos.depth', 10)
 
         param_checkpoint_path = self.get_parameter('checkpoint_path').value
-        self.param_device = self.get_parameter('param_device').value
+        self.param_device = self.get_parameter('device').value
 
         self.get_logger().info('''
         LIGHTWEIGHT OPEN POSE ROS2 START.
