@@ -12,6 +12,9 @@
   <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
 
+  <build_depend>lor_interfaces</build_depend>
+  <build_depend>lor_transformer</build_depend>
+  
   <depend>sensor_msgs</depend>
   <depend>cv_bridge</depend>
 

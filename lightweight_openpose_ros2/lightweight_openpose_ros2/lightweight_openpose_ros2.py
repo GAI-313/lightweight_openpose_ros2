@@ -6,7 +6,8 @@ import rclpy
 import message_filters
 
 from std_srvs.srv import SetBool
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image
+from lor_interfaces.msg import *
 
 from cv_bridge import CvBridge, CvBridgeError
 
@@ -37,6 +38,10 @@ class LightweightOpenPoseRos2(Node):
         self.declare_parameter('qos.reliability', 'RELIABLE')
         self.declare_parameter('qos.durability', 'VOLATILE')
         self.declare_parameter('qos.depth', 10)
+        
+        # Ensure use_sim_time parameter is available
+        if not self.has_parameter('use_sim_time'):
+            self.declare_parameter('use_sim_time', False)
 
         param_checkpoint_path = self.get_parameter('checkpoint_path').value
         self.param_device = self.get_parameter('device').value
@@ -87,6 +92,9 @@ class LightweightOpenPoseRos2(Node):
 
         # service
         self.execute_cli = self.create_service(SetBool, 'execute', self.execute_cb)
+
+        # publisher
+        self.poses_pub = self.create_publisher(Persons, 'human_2d_poses', 10)
 
         self.bridge = CvBridge()
         
@@ -166,9 +174,35 @@ class LightweightOpenPoseRos2(Node):
                     if self.track:
                         cv2.putText(cv_image, 'id: {}'.format(pose.id), (pose.bbox[0], pose.bbox[1] - 16),
                                     cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 255))
-                if self.debug:
                     cv2.imshow('Lightweight Human Pose Estimation ROS2', cv_image)
                     cv2.waitKey(1)
+
+                # Publish poses
+                persons_msg = Persons()
+                persons_msg.header = msg.header
+                persons_msg.persons = []
+
+                for pose in current_poses:
+                    person_msg = Person()
+                    if pose.id is not None:
+                        person_msg.id = pose.id
+                    else:
+                        person_msg.id = -1
+                    person_msg.confidence = float(pose.confidence)
+                    
+                    # bbox: x, y, w, h
+                    person_msg.bbox = [int(pose.bbox[0]), int(pose.bbox[1]), int(pose.bbox[2]), int(pose.bbox[3])]
+                    
+                    # keypoints
+                    for i, kpt in enumerate(pose.keypoints):
+                        pt = Point2D()
+                        pt.x = int(kpt[0])
+                        pt.y = int(kpt[1])
+                        person_msg.keypoints[i] = pt
+                    
+                    persons_msg.persons.append(person_msg)
+                
+                self.poses_pub.publish(persons_msg)
 
             except Exception as e:
                 self.get_logger().error(f'Error processing image: {str(e)}')
