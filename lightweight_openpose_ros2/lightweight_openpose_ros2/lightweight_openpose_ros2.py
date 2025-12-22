@@ -92,7 +92,7 @@ class LightweightOpenPoseRos2(Node):
             durability=durability_policy,
             depth=qos_depth
         )
-        self.image_sub = self.create_subscription(Image, '/image_raw', self.image_cb, qos_profile)
+        self.image_sub = self.create_subscription(Image, 'image_raw', self.image_cb, qos_profile)
 
         # service
         self.execute_cli = self.create_service(SetBool, 'execute', self.execute_cb)
