@@ -184,8 +184,10 @@ class LightweightOpenPoseRos2(Node):
                                     cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 255))
                     cv2.putText(cv_image, 'conf: {:.2f}'.format(pose.confidence), (pose.bbox[0], pose.bbox[1] - 32 if self.track else pose.bbox[1] - 16),
                                 cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 255))
-                    cv2.imshow('Lightweight Human Pose Estimation ROS2', cv_image)
-                    cv2.waitKey(1)
+                    
+                    if self.debug:
+                        cv2.imshow('Lightweight Human Pose Estimation ROS2', cv_image)
+                        cv2.waitKey(1)
 
                 # Publish poses
                 persons_msg = Persons()
@@ -225,7 +227,13 @@ class LightweightOpenPoseRos2(Node):
             self.get_logger().info('START DETECT')
         else:
             self.get_logger().info('STOP DETECT')
-            if self.debug: cv2.destroyWindow("Lightweight Human Pose Estimation ROS2")
+            if self.debug:
+                try:
+                    cv2.destroyWindow("Lightweight Human Pose Estimation ROS2")
+                    cv2.waitKey(1)
+                except cv2.error:
+                    pass
+                    
         res.success = True
         return res
 

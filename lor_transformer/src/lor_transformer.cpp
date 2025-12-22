@@ -5,6 +5,11 @@
 
 namespace lor_transformer
 {
+    // Helper to convert to tf2 Vector3
+    tf2::Vector3 toTf2(const geometry_msgs::msg::Point& p) {
+        return tf2::Vector3(p.x, p.y, p.z);
+    }
+
     LorTransformer::LorTransformer() : Node("lor_transformer")
     {
         // Declare parameters
@@ -208,6 +213,118 @@ namespace lor_transformer
                 valid_kpts[i] = kp_3d;
             }
             output_msg.persons.push_back(person_3d);
+
+            // --- Pose Estimate & Visualization ---
+            
+            // Define Keypoints Indices
+            // 0:Nose, 1:Neck, 2:RSho, 5:LSho, 8:RHip, 11:LHip
+            const auto& kpts = person_3d.keypoints;
+            
+            // 1. Calculate Position
+            geometry_msgs::msg::Point pos;
+            bool pos_valid = false;
+
+            // Try MidHip (8 + 11) / 2
+            if (kpts[8].z > 0 && kpts[11].z > 0) {
+                 pos.x = (kpts[8].x + kpts[11].x) / 2.0;
+                 pos.y = (kpts[8].y + kpts[11].y) / 2.0;
+                 pos.z = (kpts[8].z + kpts[11].z) / 2.0;
+                 pos_valid = true;
+            } 
+            // Try Neck (1)
+            else if (kpts[1].z > 0) {
+                pos = kpts[1];
+                pos_valid = true;
+            }
+            // Try Nose (0)
+            else if (kpts[0].z > 0) {
+                pos = kpts[0];
+                pos_valid = true;
+            }
+            
+            // 2. Calculate Orientation (Yaw from Shoulders, Vertical Constraint)
+            tf2::Quaternion q_rot;
+            q_rot.setRPY(0, 0, 0); // Default identity
+            
+            if (pos_valid) {
+                 // Try Shoulders for orientation: Right(2) -> Left(5) vector
+                 // We enforce "Upright" posture: Body Z (Up) aligned with Camera -Y (Up).
+                 // We compute Body X (Forward) by projecting shoulder vector to Horizontal (X-Z) plane.
+                 
+                 if (kpts[2].z > 0 && kpts[5].z > 0) {
+                     tf2::Vector3 v_r = toTf2(kpts[2]);
+                     tf2::Vector3 v_l = toTf2(kpts[5]);
+                     tf2::Vector3 v_sh = v_l - v_r; 
+                     
+                     // Project to X-Z plane (Camera Horizontal plane, since Y is vertical)
+                     // v_sh points roughly Left.
+                     tf2::Vector3 v_sh_flat(v_sh.x(), 0, v_sh.z());
+                     
+                     if(v_sh_flat.length() > 0.001) {
+                         // Define Basis Vectors for Body Frame in Camera Frame
+                         
+                         // 1. Up (Body Z) = -Y (Camera)
+                         tf2::Vector3 v_up(0, -1, 0);
+                         
+                         // 2. Forward (Body X)
+                         // V_sh_flat is roughly Body Left (+Y in Body? No, +Y is Left in ROS Body)
+                         // Cross Up x Left = Forward?
+                         // Z x Y = -X.
+                         // Cross Left x Up = Forward?
+                         // Y x Z = X. Match.
+                         // So V_sh_flat (Left) x V_up (Up) = Forward.
+                         // Let's verify:
+                         // Top down view (X Right, Z Forward).
+                         // Person facing -Z (Camera). R is Left(Image), L is Right(Image).
+                         // v_sh = (+X). v_up = Y(Down) -> -Y(Up). (Actually (0,-1,0)).
+                         // Left(+X) x Up(-Y) = (+1,0,0) x (0,-1,0) = (0,0,-1) = -Z.
+                         // Correct. Forward is -Z (towards camera).
+                         
+                         tf2::Vector3 v_fwd = v_sh_flat.cross(v_up);
+                         v_fwd.normalize();
+                         
+                         // 3. Left (Body Y) - Recompute to ensure orthogonality
+                         // Z(Up) x X(Fwd) = Y(Left)
+                         tf2::Vector3 v_left = v_up.cross(v_fwd);
+                         v_left.normalize();
+                         
+                         // Construct Rotation Matrix
+                         // Columns: X, Y, Z
+                         tf2::Matrix3x3 mat(
+                             v_fwd.x(), v_left.x(), v_up.x(),
+                             v_fwd.y(), v_left.y(), v_up.y(),
+                             v_fwd.z(), v_left.z(), v_up.z()
+                         );
+                         mat.getRotation(q_rot);
+                     }
+                 }
+            }
+
+            // Fill Pose
+            if (pos_valid) {
+                 output_msg.persons.back().pose.position = pos;
+                 output_msg.persons.back().pose.orientation = tf2::toMsg(q_rot);
+                 
+                 // Reuse calculated pose for marker
+                 // Marker for Orientation (Arrow)
+                 visualization_msgs::msg::Marker arrow_marker;
+                 arrow_marker.header.frame_id = output_frame;
+                 arrow_marker.header.stamp = depth_msg->header.stamp;
+                 arrow_marker.ns = "person_direction";
+                 arrow_marker.id = person.id;
+                 arrow_marker.type = visualization_msgs::msg::Marker::ARROW;
+                 arrow_marker.action = visualization_msgs::msg::Marker::ADD;
+                 arrow_marker.pose.position = pos;
+                 arrow_marker.pose.orientation = tf2::toMsg(q_rot);
+                 
+                 arrow_marker.scale.x = 0.5; // Length
+                 arrow_marker.scale.y = 0.05; // Shaft diameter
+                 arrow_marker.scale.z = 0.05; // Head diameter
+                 
+                 arrow_marker.color.r = 1.0; arrow_marker.color.g = 0.0; arrow_marker.color.b = 0.0; arrow_marker.color.a = 1.0; // Red
+                 arrow_marker.lifetime = rclcpp::Duration::from_seconds(0.2);
+                 markers.markers.push_back(arrow_marker);
+            }
 
             // Visualization
             // 1. Text Marker (ID)
