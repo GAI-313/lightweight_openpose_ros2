@@ -59,7 +59,7 @@ ros2 run lor_transformer lor_transformer --ros-args \
     -r color_camera_info:=/camera/color/camera_info \
     -p target_frame:=base_link
 ```
-> ![NOTRE] 
+> ![NOTE] 
 Replace `/camera/...` with your actual RealSense/Depth camera topics.*
 
 - **Parameters**
