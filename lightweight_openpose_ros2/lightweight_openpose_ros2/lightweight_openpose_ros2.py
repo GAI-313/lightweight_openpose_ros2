@@ -42,10 +42,14 @@ class LightweightOpenPoseRos2(Node):
         # Ensure use_sim_time parameter is available
         if not self.has_parameter('use_sim_time'):
             self.declare_parameter('use_sim_time', False)
+        
+        # min confidence
+        self.declare_parameter('min_confidence', 0.7)
 
         param_checkpoint_path = self.get_parameter('checkpoint_path').value
         self.param_device = self.get_parameter('device').value
         self.debug = self.get_parameter('debug').value
+        self.min_confidence = self.get_parameter('min_confidence').value
 
         self.get_logger().info('''
         LIGHTWEIGHT OPEN POSE ROS2 START.
@@ -159,12 +163,16 @@ class LightweightOpenPoseRos2(Node):
                         if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
                             pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
                             pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
-                    pose = Pose(pose_keypoints, pose_entries[n][18])
+                    pose = Pose(pose_keypoints, pose_entries[n][18] / (2 * pose_entries[n][19] - 1))
                     current_poses.append(pose)
 
                 if self.track:
                     track_poses(self.previous_poses, current_poses, smooth=self.smooth)
                     self.previous_poses = current_poses
+                
+                # Filter by confidence
+                current_poses = [pose for pose in current_poses if pose.confidence >= self.min_confidence]
+
                 for pose in current_poses:
                     pose.draw(cv_image)
                 cv_image = cv2.addWeighted(orig_cv_image, 0.6, cv_image, 0.4, 0)
@@ -174,6 +182,8 @@ class LightweightOpenPoseRos2(Node):
                     if self.track:
                         cv2.putText(cv_image, 'id: {}'.format(pose.id), (pose.bbox[0], pose.bbox[1] - 16),
                                     cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 255))
+                    cv2.putText(cv_image, 'conf: {:.2f}'.format(pose.confidence), (pose.bbox[0], pose.bbox[1] - 32 if self.track else pose.bbox[1] - 16),
+                                cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 255))
                     cv2.imshow('Lightweight Human Pose Estimation ROS2', cv_image)
                     cv2.waitKey(1)
 
