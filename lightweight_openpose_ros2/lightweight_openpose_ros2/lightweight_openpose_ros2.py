@@ -227,12 +227,14 @@ class LightweightOpenPoseRos2(Node):
             self.get_logger().info('START DETECT')
         else:
             self.get_logger().info('STOP DETECT')
+            '''
             if self.debug:
                 try:
                     cv2.destroyWindow("Lightweight Human Pose Estimation ROS2")
                     cv2.waitKey(1)
                 except cv2.error:
                     pass
+            '''
                     
         res.success = True
         return res
