@@ -9,7 +9,12 @@
     cd ./lightweight_openpose_ros2/datas/
     ```
     ```bash
-    get https://download.01.org/opencv/openvino_training_extensions/models/human_pose_estimation/checkpoint_iter_370000.pth
+    wget https://download.01.org/opencv/openvino_training_extensions/models/human_pose_estimation/checkpoint_iter_370000.pth
+    ```
+
+- **Install depend package**
+    ```bash
+    rosdep install -y -i --from-path src
     ```
 
 - **Build package**
@@ -72,3 +77,8 @@ Replace `/camera/...` with your actual RealSense/Depth camera topics.*
 - **Visualization**
     The node publishes `MarkerArray` to `human_pose_markers` which can be viewed in RViz2.
 The node publishes `MarkerArray` to `human_pose_markers` which can be viewed in RViz2.
+
+## Demo
+```bash
+ros2 launch lightweight_openpose_ros2 demo_launch.py 
+```
