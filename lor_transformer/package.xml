@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>lor_transformer</name>
-  <version>1.0.0</version>
+  <version>1.0.1</version>
   <description>C++ node for 2D to 3D pose transformation using depth images</description>
   <maintainer email="nakatogawagai@gmail.com">GAI-313</maintainer>
   <license>Apache-2.0</license>

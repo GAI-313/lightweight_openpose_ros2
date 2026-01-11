@@ -30,7 +30,7 @@ namespace lor_transformer
 
         // Subscribers
         poses_sub_.subscribe(this, "human_2d_poses");
-        depth_sub_.subscribe(this, "image_raw");
+        depth_sub_.subscribe(this, "image_depth");
         depth_info_sub_.subscribe(this, "depth_camera_info");
         color_info_sub_.subscribe(this, "color_camera_info");
 
