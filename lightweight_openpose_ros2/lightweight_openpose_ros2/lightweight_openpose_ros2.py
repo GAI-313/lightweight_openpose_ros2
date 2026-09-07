@@ -99,6 +99,8 @@ class LightweightOpenPoseRos2(Node):
 
         # publisher
         self.poses_pub = self.create_publisher(Persons, 'human_2d_poses', 10)
+        # debug image publisher (annotated image). Use when debug parameter is true to inspect outputs without GUI.
+        self.debug_image_pub = self.create_publisher(Image, 'lightweight_openpose/debug_image', 10)
 
         self.bridge = CvBridge()
         
@@ -184,6 +186,15 @@ class LightweightOpenPoseRos2(Node):
                                     cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 255))
                     cv2.putText(cv_image, 'conf: {:.2f}'.format(pose.confidence), (pose.bbox[0], pose.bbox[1] - 32 if self.track else pose.bbox[1] - 16),
                                 cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 255))
+
+                # If debug is enabled, publish annotated image to a ROS2 topic instead of using GUI
+                if self.debug:
+                    try:
+                        debug_msg = self.bridge.cv2_to_imgmsg(cv_image, 'bgr8')
+                        debug_msg.header = msg.header
+                        self.debug_image_pub.publish(debug_msg)
+                    except CvBridgeError:
+                        self.get_logger().warning('Failed to convert cv image to ROS Image for debug publish')
 
                 # Publish poses
                 persons_msg = Persons()
